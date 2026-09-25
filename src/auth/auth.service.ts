@@ -1,4 +1,101 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service.js';
+import type { Response } from 'express';
+import { RegisterRequest } from './dto/register.dto.js';
+import { hash } from 'argon2';
+import { JwtPayload } from './interfaces/jwt.interface.js';
+import { JwtService } from '@nestjs/jwt';
+import { isDev } from '../utils/is-dev.util.js';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
-export class AuthService {}
+export class AuthService {
+  private readonly JWT_ACCESS_TOKEN_TTL: string;
+  private readonly JWT_REFRESH_TOKEN_TTL: string;
+
+  private readonly COOKIE_DOMAIN: string;
+
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {
+    this.JWT_ACCESS_TOKEN_TTL = this.configService.getOrThrow<string>(
+      'JWT_ACCESS_TOKEN_TTL',
+    );
+    this.JWT_REFRESH_TOKEN_TTL = this.configService.getOrThrow<string>(
+      'JWT_REFRESH_TOKEN_TTL',
+    );
+    this.COOKIE_DOMAIN = this.configService.getOrThrow<string>('COOKIE_DOMAIN');
+  }
+
+  async register(res: Response, dto: RegisterRequest) {
+    const { name, email, password } = dto;
+
+    const existUser = await this.prismaService.user.findUnique({
+      where: { email },
+    });
+
+    if (existUser)
+      throw new ConflictException('Пользователь с такой почтой уже существует');
+
+    const user = await this.prismaService.user.create({
+      data: {
+        name,
+        email,
+        password: await hash(password),
+      },
+    });
+
+    return this.auth(res, user.id);
+  }
+
+  private auth(res: Response, id: string) {
+    const { accessToken, refreshToken } = this.generateTokens(id);
+
+    this.setCookie(res, refreshToken, new Date(Date.now() + 60 * 60 * 24 * 7));
+
+    return { accessToken };
+  }
+
+  private generateTokens(id: string) {
+    const payload: JwtPayload = { id };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: this.JWT_ACCESS_TOKEN_TTL as any,
+    });
+
+    const refreshToken = this.jwtService.sign(payload, {
+      expiresIn: this.JWT_REFRESH_TOKEN_TTL as any,
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  async validate(id: string) {
+    const user = await this.prismaService.user.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    if (!user) throw new NotFoundException('Пользователь не найден');
+  }
+
+  private setCookie(res: Response, value: string, expires: Date) {
+    res.cookie('refreshToken', value, {
+      httpOnly: true,
+      domain: this.COOKIE_DOMAIN,
+      expires,
+      secure: !isDev(this.configService),
+      sameSite: isDev(this.configService) ? 'none' : 'lax',
+    });
+  }
+}
