@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -16,4 +17,53 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("users")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum TaskSize {
+  S // маленькая
+  M // средняя
+  L // большая
+}
+
+enum TaskComplexity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id          String          @id @default(uuid(4))
+  title       String
+  description String?
+  priority    Int             @default(0)
+  status      TaskStatus      @default(TODO)
+  size        TaskSize?
+  complexity  TaskComplexity?
+  deadline    DateTime
+  completedAt DateTime?
+  tags        Tag[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("tasks")
+}
+
+model Tag {
+  id    String @id @default(uuid(4))
+  name  String @unique
+  color String @default("#808080")
+  tasks Task[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("tags")
 }

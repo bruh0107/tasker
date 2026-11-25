@@ -1,16 +1,29 @@
 import {
   ConflictException,
+  HttpCode,
+  HttpStatus,
   Injectable,
   NotFoundException,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 import { RegisterRequest } from './dto/register.dto.js';
-import { hash } from 'argon2';
+import { hash, verify } from 'argon2';
 import { JwtPayload } from './interfaces/jwt.interface.js';
 import { JwtService } from '@nestjs/jwt';
 import { isDev } from '../utils/is-dev.util.js';
 import { ConfigService } from '@nestjs/config';
+import { LoginRequest } from './dto/login.dto.js';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { AuthResponse } from './dto/auth.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -52,6 +65,58 @@ export class AuthService {
     });
 
     return this.auth(res, user.id);
+  }
+
+  async login(res: Response, dto: LoginRequest) {
+    const { email, password } = dto;
+
+    const user = await this.prismaService.user.findUnique({
+      where: {
+        email,
+      },
+      select: {
+        id: true,
+        password: true,
+      },
+    });
+
+    if (!user) throw new NotFoundException('Пользователь не найден');
+
+    const isValidPassword = await verify(user.password, password);
+
+    if (!isValidPassword) throw new NotFoundException('Пользователь не найден');
+
+    return this.auth(res, user.id);
+  }
+
+  async refresh(req: Request, res: Response) {
+    const refreshToken = req.cookies['refreshToken'];
+
+    if (!refreshToken)
+      throw new UnauthorizedException('Недействительный refresh-токен');
+
+    const payload: JwtPayload = await this.jwtService.verifyAsync(refreshToken);
+
+    if (payload) {
+      const user = await this.prismaService.user.findUnique({
+        where: {
+          id: payload.id,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!user) throw new NotFoundException('Пользователь не найден');
+
+      return this.auth(res, user.id);
+    }
+  }
+
+  async logout(res: Response) {
+    this.setCookie(res, 'refreshToken', new Date(0));
+
+    return true;
   }
 
   private auth(res: Response, id: string) {

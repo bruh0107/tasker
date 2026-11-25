@@ -4,18 +4,22 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
-  ApiOperation,
+  ApiOperation, ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { AuthResponse } from './dto/auth.dto.js';
 import { RegisterRequest } from './dto/register.dto.js';
-import type { Response } from 'express'
+import type { Request, Response } from 'express';
+import { LoginRequest } from './dto/login.dto.js';
+import { Authorization } from './decorators/authorization.decorator.js';
 
 @Controller('auth')
 export class AuthController {
@@ -37,5 +41,42 @@ export class AuthController {
     @Body() dto: RegisterRequest,
   ) {
     return await this.authService.register(res, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Вход в систему',
+    description: 'Авторизует пользователя и выдает токен авторизации',
+  })
+  @ApiOkResponse({ type: AuthResponse })
+  @ApiBadRequestResponse({ description: 'Некорректные входные данные' })
+  @ApiNotFoundResponse({ description: 'Пользователь не найден' })
+  @HttpCode(HttpStatus.CREATED)
+  @Post('login')
+  async login(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: LoginRequest,
+  ) {
+    return await this.authService.login(res, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Обновления токена',
+    description: 'Генерирует новый токен доступа',
+  })
+  @ApiOkResponse({ type: AuthResponse })
+  @ApiUnauthorizedResponse({ description: 'Недействительный refresh-токен' })
+  @HttpCode(HttpStatus.OK)
+  @Post('refresh')
+  async refresh(@Req() req: Request, @Res() res: Response) {
+    return await this.authService.refresh(req, res);
+  }
+
+  @ApiOperation({
+    summary: 'Выход из аккаунта',
+  })
+  @HttpCode(HttpStatus.OK)
+  @Post('logout')
+  async logout(@Res({ passthrough: true }) res: Response) {
+    return await this.authService.logout(res);
   }
 }

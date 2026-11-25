@@ -4,6 +4,8 @@ import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
+import { TaskModule } from './task/task.module.js';
+import { TagModule } from './tag/tag.module.js';
 
 @Module({
   controllers: [AppController],
@@ -14,6 +16,8 @@ import { AuthModule } from './auth/auth.module.js';
       isGlobal: true,
     }),
     AuthModule,
+    TaskModule,
+    TagModule,
   ],
 })
 export class AppModule {}
